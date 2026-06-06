@@ -1,9 +1,5 @@
 use actix_web::{web, App, HttpResponse, HttpServer, Responder};
-
-mod auth;
-mod models;
-
-use auth::{AppState, AuthenticatedUser};
+use authaction::{actix::AuthenticatedUser, Verifier};
 
 async fn public_route() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({
@@ -22,18 +18,16 @@ async fn protected_route(user: AuthenticatedUser) -> impl Responder {
 async fn main() -> std::io::Result<()> {
     dotenvy::dotenv().ok();
 
-    let domain = std::env::var("AUTHACTION_DOMAIN")
-        .expect("AUTHACTION_DOMAIN must be set");
-    let audience = std::env::var("AUTHACTION_AUDIENCE")
-        .expect("AUTHACTION_AUDIENCE must be set");
+    let domain = std::env::var("AUTHACTION_DOMAIN").expect("AUTHACTION_DOMAIN must be set");
+    let audience = std::env::var("AUTHACTION_AUDIENCE").expect("AUTHACTION_AUDIENCE must be set");
 
-    let state = web::Data::new(AppState::new(domain, audience));
+    let verifier = web::Data::new(Verifier::new(&domain, &audience));
 
     println!("Server running at http://0.0.0.0:8080");
 
     HttpServer::new(move || {
         App::new()
-            .app_data(state.clone())
+            .app_data(verifier.clone())
             .route("/public", web::get().to(public_route))
             .route("/protected", web::get().to(protected_route))
     })
