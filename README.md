@@ -1,10 +1,10 @@
 # authaction-rust-actix-example
 
-A Rust Actix-web application demonstrating API authorization using [AuthAction](https://app.authaction.com/) with JWKS-based JWT validation.
+A Rust Actix-web application demonstrating API authorization using [AuthAction](https://app.authaction.com/) with the `authaction` crate.
 
 ## Overview
 
-This application shows how to configure and handle authorization using AuthAction's access tokens in an Actix-web API. It validates JSON Web Tokens (JWT) signed with RS256 by fetching public keys dynamically from AuthAction's JWKS endpoint. Public keys are cached in-process using a `tokio::sync::RwLock`, with automatic single-retry on key rotation.
+This application shows how to configure and handle authorization using AuthAction's access tokens in an Actix-web API. It validates JSON Web Tokens (JWT) using the `authaction` crate (with the `actix` feature), which provides an `AuthenticatedUser` extractor that handles JWKS fetching and RS256 validation automatically.
 
 ## Prerequisites
 
@@ -84,9 +84,7 @@ This application shows how to configure and handle authorization using AuthActio
 ```
 authaction-rust-actix-example/
 ├── src/
-│   ├── main.rs      # Actix-web app setup and route handlers
-│   ├── auth.rs      # AppState, JWKS cache, JWT validation, AuthenticatedUser extractor
-│   └── models.rs    # Claims struct
+│   └── main.rs      # Actix-web app setup, Verifier, and route handlers
 ├── Cargo.toml
 ├── .env.example
 └── README.md
@@ -94,37 +92,14 @@ authaction-rust-actix-example/
 
 ## Code Explanation
 
-### `src/auth.rs` — JWT Validation
+### `src/main.rs` — App Setup and Routes
 
-Equivalent to `JwtStrategy` in the NestJS example.
+- **`Verifier::new(&domain, &audience)`** — Creates an `authaction::Verifier` from the `authaction` crate. The verifier is wrapped in `web::Data` and shared across all Actix workers.
 
-- **`AppState`** — Holds the shared `domain`, `audience`, and a
-  `tokio::sync::RwLock<Option<Arc<JwkSet>>>` JWKS cache. Wrapped in
-  `web::Data<AppState>` and shared across all Actix workers.
-
-- **`get_jwks()`** — Acquires a read lock and returns the cached key set. On a
-  cache miss, upgrades to a write lock, fetches
-  `https://{AUTHACTION_DOMAIN}/.well-known/jwks.json` via `reqwest`, and stores
-  an `Arc<JwkSet>` so cloning is O(1).
-
-- **`verify_token()`** — Decodes the token header to extract `kid`, then
-  validates the JWT using `jsonwebtoken::decode` with:
-  - Algorithm: `RS256`
-  - Issuer: `https://{AUTHACTION_DOMAIN}` (`set_issuer`)
-  - Audience: `{AUTHACTION_AUDIENCE}` (`set_audience`)
-
-  If the `kid` is absent from the cached key set (key rotation), it calls
-  `invalidate_and_refetch()` and retries once before returning `KeyNotFound`.
-
-- **`AuthenticatedUser`** — An Actix-web `FromRequest` extractor. Adding it as
-  a handler parameter automatically validates the Bearer token and injects the
-  decoded `Claims`. Returns HTTP 401 on any validation failure.
-
-### `src/main.rs` — Routes
+- **`AuthenticatedUser`** — An Actix-web `FromRequest` extractor from `authaction::actix`. Adding it as a handler parameter automatically validates the Bearer token using the shared `Verifier` and injects the decoded claims. Returns HTTP 401 on any validation failure.
 
 - **`GET /public`** — No extractor, accessible without authentication.
-- **`GET /protected`** — Takes `user: AuthenticatedUser`; Actix calls
-  `FromRequest` before the handler runs, rejecting invalid/missing tokens.
+- **`GET /protected`** — Takes `user: AuthenticatedUser`; Actix calls `FromRequest` before the handler runs, rejecting invalid or missing tokens.
 
 ## Common Issues
 
